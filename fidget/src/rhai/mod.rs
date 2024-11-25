@@ -11,7 +11,7 @@
 //!     vm::VmShape,
 //! };
 //!
-//! let tree = fidget::rhai::eval("x + y")?;
+//! let tree = fidget::rhai::eval("x + y", &[])?;
 //! let shape = VmShape::from(tree);
 //! let mut eval = VmShape::new_point_eval();
 //! let tape = shape.ez_point_tape();
@@ -52,6 +52,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::{context::Tree, Error};
 use rhai::{CustomType, NativeCallContext, TypeBuilder};
+
+type Binding<'a> = (&'a str, crate::var::Var);
 
 /// Engine for evaluating a Rhai script with Fidget-specific bindings
 pub struct Engine {
@@ -172,7 +174,11 @@ impl Engine {
     }
 
     /// Evaluates a single expression, in terms of `x`, `y`, and `z`
-    pub fn eval(&mut self, script: &str) -> Result<Tree, Error> {
+    pub fn eval(
+        &mut self,
+        script: &str,
+        extra_bindings: &[Binding],
+    ) -> Result<Tree, Error> {
         let ast = self.engine.compile(script)?;
         let mut scope = {
             let mut ctx = self.context.lock().unwrap();
@@ -183,6 +189,11 @@ impl Engine {
             scope.push("x", Tree::x());
             scope.push("y", Tree::y());
             scope.push("z", Tree::z());
+
+            for (name, value) in extra_bindings {
+                scope.push(*name, Tree::from(*value));
+            }
+
             scope
         };
 
@@ -391,9 +402,9 @@ define_unary_fns!(round);
 ////////////////////////////////////////////////////////////////////////////////
 
 /// One-shot evaluation of a single expression, in terms of `x, y, z`
-pub fn eval(s: &str) -> Result<Tree, Error> {
+pub fn eval(s: &str, extra_bindings: &[Binding]) -> Result<Tree, Error> {
     let mut engine = Engine::new();
-    engine.eval(s)
+    engine.eval(s, extra_bindings)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -416,7 +427,7 @@ mod test {
     #[test]
     fn test_eval() {
         let mut engine = Engine::new();
-        let t = engine.eval("x + y").unwrap();
+        let t = engine.eval("x + y", &[]).unwrap();
         let mut ctx = Context::new();
         let sum = ctx.import(&t);
         assert_eq!(ctx.eval_xyz(sum, 1.0, 2.0, 0.0).unwrap(), 3.0);
@@ -425,7 +436,7 @@ mod test {
     #[test]
     fn test_eval_multiline() {
         let mut engine = Engine::new();
-        let t = engine.eval("let foo = x; foo + y").unwrap();
+        let t = engine.eval("let foo = x; foo + y", &[]).unwrap();
         let mut ctx = Context::new();
         let sum = ctx.import(&t);
         assert_eq!(ctx.eval_xyz(sum, 1.0, 2.0, 0.0).unwrap(), 3.0);
